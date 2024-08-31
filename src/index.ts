@@ -3,31 +3,34 @@ import Docker from 'dockerode';
 import { readFile } from 'fs/promises';
 import axios from 'axios';
 import { error } from 'console';
+import FileStorage from './fileStorage';
 
+// interface KeyValueData {  // Named export for the interface
+//     value: string;
+//     vectorClock: number[];
+// }
 class ConsistentHashing {
 
     private ring: Map<string, string>;
     private nodeContainerMap: Map<string,string>;
-    private keyValuePair: Map<string,string>;
     private sortedKeys: string[];
     private docker;
     private writeQuorum;
+    private fileStorage;
     
-
     constructor(nodes: string[]=[]){
         this.ring=new Map();
         this.nodeContainerMap=new Map();
         this.sortedKeys=[];
-        this.keyValuePair=new Map();
         nodes.forEach(node=>this.addNode(node));
         this.docker = new Docker({
             port: 8080,
             protocol: 'http',
         });
         this.writeQuorum=2;
+        this.fileStorage=new FileStorage();
     }
 
-    
     async listContainers() {
         try {
             const containers = await this.docker.listContainers();
@@ -60,13 +63,37 @@ class ConsistentHashing {
             console.error('Error reading container ID:', error);
         }
         return null;
-      }
-
-    addKeyValueReplicaToTheContainer(key:string,value:string){
-        this.keyValuePair.set(key, value);
-        console.log(this.keyValuePair.get(key));
-        return true;
     }
+
+    async addKeyValueReplicaToTheContainer(key: string, value: string) {
+        if (await this.fileStorage.isKeyPresent(key)) {
+
+            const keyValueData = await this.fileStorage.getKeyValue(key);
+    
+            if (keyValueData) { 
+                console.log("KeyValueData before update:", keyValueData); 
+                keyValueData.vectorClock[0] += 1;
+                await this.fileStorage.setKeyValue(key, keyValueData.value, keyValueData.vectorClock);
+                console.log("KeyValueData after update:", keyValueData);
+            } else {
+                console.error(`Error: Key ${key} is present but returned undefined data.`);
+            }
+        } else {
+            await this.fileStorage.setKeyValue(key, value, [0, 0, 0]);
+            const newKeyValueData = await this.fileStorage.getKeyValue(key);
+            
+            if (newKeyValueData) {
+                console.log("New KeyValueData:", newKeyValueData);
+            } else {
+                console.error(`Error: Failed to set and retrieve the new key-value pair for key ${key}.`);
+            }
+    
+            return true;
+        }
+    }
+    
+    
+    
 
     async addKeyValueToTheContainers(
         containersId: string[] | undefined,
@@ -81,22 +108,25 @@ class ConsistentHashing {
             } else {
                 let promises: Promise<boolean>[] = []; // Declare an array to hold promises
     
-                for (const containerId of containersId) {
+                for (let i = 0; i < containersId.length; i++) {
+                    const containerId = containersId[i];
+                
                     if (containerId === currentContainerId) {
-                        this.keyValuePair.set(key, value);
+                        this.fileStorage.setKeyValue(key,value,[0,0,0]);
                         this.writeQuorum--;
                         // No need to add a promise for this operation
                     } else {
                         if (nodes != null) {
-                            const node = nodes[containersId.indexOf(containerId)]; // Get the corresponding node
+                            const node = nodes[i]; // Directly using the loop index to get the corresponding node
+                
                             const promise = axios.post(`http://${node}:8080/storeReplicas`, {
                                 key: key,
                                 value: value
                             }).then(res => {
-                                console.log(res.data)
+                                console.log(res.data);
                                 if (res.data === "storedReplicas") {
                                     this.writeQuorum--;
-                                    console.log("Reached here")
+                                    console.log("Reached here");
                                     // Check if writeQuorum is 0 after decrement
                                     if (this.writeQuorum <= 0) {
                                         console.log("One down");
@@ -105,14 +135,15 @@ class ConsistentHashing {
                                 }
                                 return false;
                             }).catch(error => {
-                                console.error(`Error sending request to node ${node}:`, error);
+                                console.error(`Error sending request to node ${node}`);
                                 return false;
                             });
-    
+                
                             promises.push(promise); // Add promise to the array
                         }
                     }
                 }
+                
     
                 // Await the results of the promises
                 for (let promise of promises) {
@@ -122,6 +153,8 @@ class ConsistentHashing {
                         return true; // Exit if quorum is reached
                     }
                 }
+
+                return false;
             }
         } catch (error) {
             console.error('Error adding key-value pair to container:', error);

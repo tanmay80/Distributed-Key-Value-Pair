@@ -35,8 +35,12 @@ app.post('/storeData',async (req,res)=>{
     // const val= response.valueOf();
     
     // console.log(val);
+    if(response==true){
+      res.send("Your data has been stored");
+      return;
+    }
 
-    res.send("Bye");
+    res.send("Error: You data was not stored");
 })
 
 

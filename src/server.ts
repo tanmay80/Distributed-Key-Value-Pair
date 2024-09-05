@@ -12,6 +12,26 @@ app.use(bodyParser.json());
 
 var currentContainerId:string|undefined|null;
 
+app.post('/updateReplica',async(req,res)=>{
+    await ch.listContainers();
+    const key= req.body.key;
+    const value=req.body.value;
+    const vectorClock = req.body.vectorClock;
+
+    console.log("Inside updateReplica");
+    console.log(vectorClock);
+
+    const response=await ch.updateValueVectorAtRead(key,value,vectorClock);
+
+    if(response===true){
+        console.log("Replica Updated")
+        res.send("Updated the Replicas");
+        return;
+    }
+
+    res.send("Error: Not able to update!");
+})
+
 app.post('/storeReplicas',async (req,res)=>{
     await ch.listContainers();
     const key= req.body.key;
@@ -43,9 +63,36 @@ app.post('/storeData',async (req,res)=>{
     res.send("Error: You data was not stored");
 })
 
+app.get('/getReplicasValue',async(req,res)=>{
+    await ch.listContainers();
+    const key= req.query.key;
+    const response= await ch.getReplicasValues(key);
+    res.send(response);
+})
 
-app.get('/getData', (req, res) => {
-  res.send('Hello World!')
+
+app.get('/getData',async (req, res) => {
+  await ch.listContainers();
+  const key=req.body.key;
+  const nodes= ch.getNextNNodes(key);
+  const containers=ch.getContainers(nodes);
+
+  //Check if the particular key is even present or not in atleast readQuorum servers.
+  //If present - check - if readQuorum is satisfied, if yes then send the value back and also make sure if a particular node has any old value that needs to be updated
+  //                   - if readQuoprum is not Satisfied then return "Server Down".
+  //If not present - Return key not present .
+
+  // console.log(nodes);
+  // console.log(containers);
+
+  const response= await ch.getValue(containers,currentContainerId,nodes,key);
+
+  if(response===true){
+    res.send("Your data has been retrived");
+    return;
+  }
+  console.log(response);
+  res.send("Error: You data was not retrived");
 })
 
 app.listen(port, () => {

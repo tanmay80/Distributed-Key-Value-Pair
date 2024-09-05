@@ -16,6 +16,7 @@ class ConsistentHashing {
     private sortedKeys: string[];
     private docker;
     private writeQuorum;
+    private readQuorum;
     private fileStorage;
     
     constructor(nodes: string[]=[]){
@@ -28,6 +29,7 @@ class ConsistentHashing {
             protocol: 'http',
         });
         this.writeQuorum=2;
+        this.readQuorum=2;
         this.fileStorage=new FileStorage();
     }
 
@@ -65,6 +67,21 @@ class ConsistentHashing {
         return null;
     }
 
+    async updateValueVectorAtRead(key:string,value:string,vector:[]){
+
+        await this.fileStorage.setKeyValue(key, value, vector);    
+        const newKeyValueData = await this.fileStorage.getKeyValue(key);
+            
+        if (newKeyValueData) {
+            console.log("New KeyValueData:", newKeyValueData);
+        } else {
+            console.error(`Error: Failed to set and retrieve the new key-value pair for key ${key}.`);
+            return false;
+        }
+
+        return true;
+    }
+
     async addKeyValueReplicaToTheContainer(key: string, value: string) {
         if (await this.fileStorage.isKeyPresent(key)) {
 
@@ -91,9 +108,146 @@ class ConsistentHashing {
             return true;
         }
     }
+
+    compareVectorClocks(vc1: number[], vc2: number[]): number {
+        let isGreater = false, isLesser = false;
+        console.log("Inside comapre vector clocks");
+        console.log(vc1);
+        for (let i = 0; i < vc1.length; i++) {
+            if (vc1[i] > vc2[i]) isGreater = true;
+            if (vc1[i] < vc2[i]) isLesser = true;
+        }
+        console.log("Inside comapre vector clocks2");
+        if (isGreater && !isLesser) return 1;  // vc1 is greater
+        if (isLesser && !isGreater) return -1; // vc2 is greater
+        return 0;                              // They are concurrent or equal
+    }
     
     
     
+    async getValue(
+        containersId: string[] | undefined,
+        currentContainerId: string | undefined | null,
+        nodes: string[] | undefined | null,
+        key: string,
+    ){
+        try{
+            if(containersId==null){
+                return false;
+            }else{
+                let datas: any[] = new Array(containersId.length);
+                let promises: Promise<any>[] = [];
+
+                for(let i=0;i<containersId.length;i=i+1){
+                    const containerId= containersId[i];
+
+                    if (containerId === currentContainerId) {
+                        const promise=await this.fileStorage.getKeyValue(key);
+                        // console.log(promise+" promise");
+                        datas[i]=promise;
+                        // promises.push(promise);  
+                        this.readQuorum--;
+                    }else{
+                        if(nodes!=null){
+                            const node = nodes[i];
+                            const promise = axios.get(`http://${node}:8080/getReplicasValue`, {
+                                params: {
+                                    key: key
+                                }
+                            })
+                            .then(res=>{
+                               console.log(res.data+"node :"+node);
+                               datas[i]=res.data;
+                               this.readQuorum--;
+                            }).catch(error => {
+                                console.error(`Error sending request to node ${node}`);
+                                return false;
+                            });;
+
+                            promises.push(promise);
+                        }
+                    }
+
+                }
+
+                
+
+                for (let promise of promises) {
+                    const result = await promise;
+                    if (this.readQuorum <= 0) {
+                        console.log("ReadQuorum is 0");
+                        break; // Exit if quorum is reached
+                    }
+                }
+
+                if(this.readQuorum<=0){
+                    
+                    let latestReplica = datas[0];
+                    console.log(datas.length+" Length of Datas")
+                    for (let i = 1; i < datas.length; i++) {
+                        // console.log("Ganduuuuuu")
+                        if (latestReplica && datas[i]) { // Ensure both are not null or undefined
+                            // console.log("Ganduuuuuu")
+                            // console.log(latestReplica);
+                            // console.log(datas[i]);
+                            const comparison = this.compareVectorClocks(latestReplica.vectorClock, datas[i].vectorClock);
+                            
+                            if (comparison === -1) {  // data[i] has a greater vector clock
+                                latestReplica = datas[i];
+                            }
+                        } else if (datas[i]) {  // If latestReplica is null but data[i] is not
+                            latestReplica = datas[i];
+                        }
+                    }
+
+                    // console.log("sadsdasd");
+                    console.log(`Latest Value: ${latestReplica.value}`);
+                    console.log(`Latest Vector Clock: ${latestReplica.vectorClock}`);
+                    
+                    
+                    for(let i=0;i<datas.length;i=i+1){
+                        // console.log(i);
+                        if (latestReplica && datas[i]) { // Ensure both are not null or undefined
+                            // console.log(latestReplica.vectorClock+" "+datas[i].vectorClock);
+                            const comparison = this.compareVectorClocks(latestReplica.vectorClock, datas[i].vectorClock);
+
+                            // console.log("aklssjdklasjdklas");
+
+                            // console.log(comparison);
+
+                            if (comparison === 1) {  // latestReplica has a greater vector clock
+                                if(nodes!=null){
+                                    const node=nodes[i];
+                                    console.log("------");
+                                    console.log(node);
+                                    console.log(latestReplica.vectorClock);
+                                    console.log(latestReplica.value);
+                                    console.log("------");
+                                    axios.post(`http://${node}:8080/updateReplica`, {
+                                        key: key,
+                                        value: latestReplica.value,
+                                        vectorClock: latestReplica.vectorClock
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    
+
+                    return true;
+                }
+
+            }
+        }catch(error){
+            console.error('Error retriving key-value pair to container');
+            return false;
+        }
+    }
+
+    async getReplicasValues(key: any,){
+        const promise=this.fileStorage.getKeyValue(key);
+        return promise;
+    }
 
     async addKeyValueToTheContainers(
         containersId: string[] | undefined,

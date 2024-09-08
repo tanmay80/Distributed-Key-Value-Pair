@@ -107,7 +107,7 @@ The system exposes several API endpoints for storing and retrieving data across 
 1. Clone the repository.
 2. Install the necessary dependencies:
    npm install
-3. Build the docker image
+3. Build the docker image:
    docker build -t my-typescript-app .
-4. Up the docker container withn the image
+4. Up the docker container withn the image: 
    docker compose up -d

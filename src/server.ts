@@ -41,6 +41,7 @@ app.post('/storeReplicas',async (req,res)=>{
     res.send("storedReplicas");
 })
 
+//Api used by User
 app.post('/storeData',async (req,res)=>{
     await ch.listContainers();
     const key= req.body.key;
@@ -70,20 +71,12 @@ app.get('/getReplicasValue',async(req,res)=>{
     res.send(response);
 })
 
-
+//Api used by User
 app.get('/getData',async (req, res) => {
   await ch.listContainers();
   const key=req.body.key;
   const nodes= ch.getNextNNodes(key);
   const containers=ch.getContainers(nodes);
-
-  //Check if the particular key is even present or not in atleast readQuorum servers.
-  //If present - check - if readQuorum is satisfied, if yes then send the value back and also make sure if a particular node has any old value that needs to be updated
-  //                   - if readQuoprum is not Satisfied then return "Server Down".
-  //If not present - Return key not present .
-
-  // console.log(nodes);
-  // console.log(containers);
 
   const response= await ch.getValue(containers,currentContainerId,nodes,key);
 

@@ -211,12 +211,16 @@ class ConsistentHashing {
                         }
                     }
                     
-
+                    this.readQuorum=2;
                     return true;
+                }else{
+                    this.readQuorum=2;
+                    return false;
                 }
-
+                
             }
         }catch(error){
+            this.readQuorum=2;
             console.error('Error retriving key-value pair to container');
             return false;
         }
@@ -260,10 +264,10 @@ class ConsistentHashing {
                                     this.writeQuorum--;
                                     console.log("Reached here");
                                     // Check if writeQuorum is 0 after decrement
-                                    if (this.writeQuorum <= 0) {
-                                        console.log("One down");
-                                        return true; // Early return if quorum is reached
-                                    }
+                                    // if (this.writeQuorum <= 0) {
+                                    //     console.log("One down");
+                                    //     return true; // Early return if quorum is reached
+                                    // }
                                 }
                                 return false;
                             }).catch(error => {
@@ -282,10 +286,11 @@ class ConsistentHashing {
                     const result = await promise;
                     if (this.writeQuorum <= 0) {
                         console.log("Write Quorum is 0, total 2 places the value is stored");
+                        this.writeQuorum=2;
                         return true; // Exit if quorum is reached
                     }
                 }
-
+                this.writeQuorum=2;
                 return false;
             }
         } catch (error) {

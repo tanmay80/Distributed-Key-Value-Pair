@@ -5,10 +5,6 @@ import axios from 'axios';
 import { error } from 'console';
 import FileStorage from './fileStorage';
 
-// interface KeyValueData {  // Named export for the interface
-//     value: string;
-//     vectorClock: number[];
-// }
 class ConsistentHashing {
 
     private ring: Map<string, string>;
@@ -143,9 +139,7 @@ class ConsistentHashing {
 
                     if (containerId === currentContainerId) {
                         const promise=await this.fileStorage.getKeyValue(key);
-                        // console.log(promise+" promise");
                         datas[i]=promise;
-                        // promises.push(promise);  
                         this.readQuorum--;
                     }else{
                         if(nodes!=null){
@@ -176,53 +170,37 @@ class ConsistentHashing {
                     const result = await promise;
                     if (this.readQuorum <= 0) {
                         console.log("ReadQuorum is 0");
-                        break; // Exit if quorum is reached
+                        break; 
                     }
                 }
 
                 if(this.readQuorum<=0){
                     
                     let latestReplica = datas[0];
-                    console.log(datas.length+" Length of Datas")
                     for (let i = 1; i < datas.length; i++) {
-                        // console.log("Ganduuuuuu")
-                        if (latestReplica && datas[i]) { // Ensure both are not null or undefined
-                            // console.log("Ganduuuuuu")
-                            // console.log(latestReplica);
-                            // console.log(datas[i]);
+                        if (latestReplica && datas[i]) { 
                             const comparison = this.compareVectorClocks(latestReplica.vectorClock, datas[i].vectorClock);
                             
-                            if (comparison === -1) {  // data[i] has a greater vector clock
+                            if (comparison === -1) {  
                                 latestReplica = datas[i];
                             }
-                        } else if (datas[i]) {  // If latestReplica is null but data[i] is not
+                        } else if (datas[i]) {  
                             latestReplica = datas[i];
                         }
                     }
 
-                    // console.log("sadsdasd");
+                    
                     console.log(`Latest Value: ${latestReplica.value}`);
                     console.log(`Latest Vector Clock: ${latestReplica.vectorClock}`);
                     
                     
                     for(let i=0;i<datas.length;i=i+1){
-                        // console.log(i);
-                        if (latestReplica && datas[i]) { // Ensure both are not null or undefined
-                            // console.log(latestReplica.vectorClock+" "+datas[i].vectorClock);
+                        if (latestReplica && datas[i]) { 
                             const comparison = this.compareVectorClocks(latestReplica.vectorClock, datas[i].vectorClock);
 
-                            // console.log("aklssjdklasjdklas");
-
-                            // console.log(comparison);
-
-                            if (comparison === 1) {  // latestReplica has a greater vector clock
+                            if (comparison === 1) { 
                                 if(nodes!=null){
                                     const node=nodes[i];
-                                    console.log("------");
-                                    console.log(node);
-                                    console.log(latestReplica.vectorClock);
-                                    console.log(latestReplica.value);
-                                    console.log("------");
                                     axios.post(`http://${node}:8080/updateReplica`, {
                                         key: key,
                                         value: latestReplica.value,
